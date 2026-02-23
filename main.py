@@ -1,14 +1,43 @@
 from fastapi import FastAPI
 from scipy.stats import poisson
+import requests
+import os
 
 app = FastAPI()
 
+API_KEY = os.getenv("SPORTS_API_KEY")
+API_HOST = "v3.football.api-sports.io"
+
+headers = {
+    "x-apisports-key": API_KEY
+}
+
 @app.get("/")
 def root():
-    return {"message": "Sports Predictor API Running"}
+    return {"message": "Sports Predictor API Running with Real Data"}
 
-@app.get("/predict/{home}/{away}/{home_avg}/{away_avg}")
-def predict(home: str, away: str, home_avg: float, away_avg: float):
+@app.get("/matches/{league_id}")
+def get_matches(league_id: int):
+    url = f"https://{API_HOST}/fixtures?league={league_id}&season=2024"
+
+    response = requests.get(url, headers=headers)
+    return response.json()
+
+
+@app.get("/predict/{fixture_id}")
+def predict_fixture(fixture_id: int):
+
+    url = f"https://{API_HOST}/fixtures?id={fixture_id}"
+    response = requests.get(url, headers=headers)
+    data = response.json()
+
+    home_team = data["response"][0]["teams"]["home"]["name"]
+    away_team = data["response"][0]["teams"]["away"]["name"]
+
+    # Aquí normalmente sacaríamos estadísticas reales,
+    # pero para MVP usamos promedio fijo temporal
+    home_avg = 1.6
+    away_avg = 1.2
 
     lambda_home = home_avg
     lambda_away = away_avg
@@ -21,13 +50,11 @@ def predict(home: str, away: str, home_avg: float, away_avg: float):
     away_win = 1 - home_win - draw
 
     return {
-        "home_team": home,
-        "away_team": away,
+        "home_team": home_team,
+        "away_team": away_team,
         "home_win_%": round(home_win * 100, 2),
         "draw_%": round(draw * 100, 2),
         "away_win_%": round(away_win * 100, 2),
-        "expected_goals_home": round(lambda_home, 2),
-        "expected_goals_away": round(lambda_away, 2),
         "expected_shots": round((lambda_home + lambda_away) * 1.4, 2),
         "expected_yellow_cards": round((lambda_home + lambda_away) * 1.2, 2)
     }
