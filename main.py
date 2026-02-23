@@ -5,25 +5,23 @@ import os
 
 app = FastAPI()
 
-API_KEY = os.getenv("SPORTS_API_KEY")
-API_HOST = "v3.football.api-sports.io"
+API_KEY = os.getenv("huRfII6y1i9bWOpby5y9K8CfwECyVQiJoYdCSG2l")  # Tu key de SportDB.dev
+BASE_URL = "https://sportdb.dev/api"
 
 headers = {
-    "x-apisports-key": API_KEY
+    "x-api-key": API_KEY
 }
 
 
-def get_team_stats(team_id, league_id, season):
-    url = f"https://{API_HOST}/teams/statistics?team={team_id}&league={league_id}&season={season}"
-    response = requests.get(url, headers=headers)
-    data = response.json()
+def get_team_avg_goals(team_id, league_slug, season):
+    """Obtiene media de goles de un equipo"""
+    url = f"{BASE_URL}/football/{league_slug}/{season}/teams/{team_id}/stats"
+    res = requests.get(url, headers=headers).json()
 
-    goals_for = data["response"]["goals"]["for"]["total"]["total"]
-    goals_against = data["response"]["goals"]["against"]["total"]["total"]
-    matches_played = data["response"]["fixtures"]["played"]["total"]
-
-    if matches_played == 0:
-        return 1.2, 1.2
+    # Ajusta según estructura de la API
+    goals_for = res.get("goals_for", 1.2)
+    goals_against = res.get("goals_against", 1.2)
+    matches_played = res.get("matches_played", 1)
 
     avg_for = goals_for / matches_played
     avg_against = goals_against / matches_played
@@ -33,35 +31,17 @@ def get_team_stats(team_id, league_id, season):
 
 @app.get("/")
 def root():
-    return {"message": "Sports Predictor AI Running with Real Stats"}
+    return {"message": "Sports Predictor API Running with SportDB.dev"}
 
 
-@app.get("/predict/{fixture_id}")
-def predict_fixture(fixture_id: int):
+@app.get("/predict/{league_slug}/{season}/{home_id}/{away_id}")
+def predict(league_slug: str, season: str, home_id: int, away_id: int):
+    home_avg_for, home_avg_against = get_team_avg_goals(home_id, league_slug, season)
+    away_avg_for, away_avg_against = get_team_avg_goals(away_id, league_slug, season)
 
-    # 1️⃣ Obtener info del partido
-    fixture_url = f"https://{API_HOST}/fixtures?id={fixture_id}"
-    fixture_response = requests.get(fixture_url, headers=headers)
-    fixture_data = fixture_response.json()["response"][0]
-
-    home_team = fixture_data["teams"]["home"]["name"]
-    away_team = fixture_data["teams"]["away"]["name"]
-
-    home_id = fixture_data["teams"]["home"]["id"]
-    away_id = fixture_data["teams"]["away"]["id"]
-
-    league_id = fixture_data["league"]["id"]
-    season = fixture_data["league"]["season"]
-
-    # 2️⃣ Obtener estadísticas reales
-    home_avg_for, home_avg_against = get_team_stats(home_id, league_id, season)
-    away_avg_for, away_avg_against = get_team_stats(away_id, league_id, season)
-
-    # 3️⃣ Calcular fuerza ofensiva ajustada
     lambda_home = (home_avg_for + away_avg_against) / 2
     lambda_away = (away_avg_for + home_avg_against) / 2
 
-    # 4️⃣ Modelo Poisson
     home_probs = [poisson.pmf(i, lambda_home) for i in range(6)]
     away_probs = [poisson.pmf(i, lambda_away) for i in range(6)]
 
@@ -70,8 +50,6 @@ def predict_fixture(fixture_id: int):
     away_win = 1 - home_win - draw
 
     return {
-        "home_team": home_team,
-        "away_team": away_team,
         "home_avg_goals": round(home_avg_for, 2),
         "away_avg_goals": round(away_avg_for, 2),
         "home_win_%": round(home_win * 100, 2),
